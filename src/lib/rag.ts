@@ -6,6 +6,14 @@ import { scrollVectors, searchVectors, type VectorPoint } from "@/lib/qdrant";
 import type { ChatMode, ChatResponseBody, OutputLanguage } from "@/types/chat";
 
 const openaiClient = new OpenAI({ apiKey: appConfig.openAiApiKey });
+const FALLBACK_EXCERPT_LENGTH = 220;
+const QUICK_MODE_CITATION_COUNT = 1;
+const DEEP_MODE_CITATION_COUNT = 3;
+
+const interpretationLabel = (language: OutputLanguage): string =>
+  language === "de"
+    ? "Erläuterung/Interpretation"
+    : "Explanation/Interpretation (Erläuterung/Interpretation)";
 
 const toContextLine = (point: VectorPoint): string =>
   `[page=${point.payload.page}; chunk=${point.payload.chunkIndex}; shabad=${point.payload.shabadHeuristicId}] ${point.payload.text}`;
@@ -59,6 +67,11 @@ const estimateConfidence = (hits: VectorPoint[]): number => {
     Math.max(1, hits.length);
   return Number(avg.toFixed(3));
 };
+
+const ensureInterpretationLabel = (answer: string, language: OutputLanguage): string =>
+  /Erläuterung\/Interpretation:|Explanation\/Interpretation/i.test(answer.trim())
+    ? answer
+    : `${interpretationLabel(language)}: ${answer.trim()}`;
 
 const parseModelJson = (content: string): Pick<ChatResponseBody, "answer" | "citations"> => {
   const parsed = JSON.parse(content) as { answer?: unknown; citations?: unknown };
@@ -116,7 +129,7 @@ export const answerWithRag = async (
         : "I could not confidently find the source in the available SGGS context. Could you narrow the question (topic, shabad, or key words)?";
 
     return {
-      answer: `Erläuterung/Interpretation: ${fallbackAnswer}`,
+      answer: ensureInterpretationLabel(fallbackAnswer, language),
       citations: [],
       confidence,
       needsClarification: true,
@@ -126,39 +139,40 @@ export const answerWithRag = async (
   const expanded = await expandContext(hits);
   const context = expanded.map(toContextLine).join("\n\n");
 
-  const completion = await openaiClient.responses.create({
+  const completion = await openaiClient.chat.completions.create({
     model: appConfig.openAiModel,
-    input: [
+    messages: [
       {
         role: "system",
-        content: [{ type: "input_text", text: buildSystemPrompt(mode, language) }],
+        content: buildSystemPrompt(mode, language),
       },
       {
         role: "user",
-        content: [{ type: "input_text", text: buildUserPrompt(question, context) }],
+        content: buildUserPrompt(question, context),
       },
     ],
-    text: {
-      format: {
-        type: "json_object",
-      },
-    },
+    response_format: { type: "json_object" },
   });
 
-  const rawOutput = completion.output_text?.trim();
+  const rawOutput = completion.choices[0]?.message?.content?.trim();
   if (!rawOutput) {
     throw new Error("Model returned empty output.");
   }
 
   const parsed = parseModelJson(rawOutput);
-  const fallbackCitations = expanded.slice(0, mode === "quick" ? 1 : 3).map((point) => ({
+  const fallbackCitations = expanded
+    .slice(0, mode === "quick" ? QUICK_MODE_CITATION_COUNT : DEEP_MODE_CITATION_COUNT)
+    .map((point) => ({
     page: point.payload.page,
-    gurmukhiExcerpt: point.payload.text.slice(0, 220),
+    gurmukhiExcerpt: point.payload.text.slice(0, FALLBACK_EXCERPT_LENGTH),
     source: "SGGS_PDF" as const,
-  }));
+    }));
 
   return {
-    answer: parsed.answer || (language === "de" ? "Erläuterung/Interpretation: Keine Antwort generiert." : "Erläuterung/Interpretation: No answer generated."),
+    answer: ensureInterpretationLabel(
+      parsed.answer || (language === "de" ? "Keine Antwort generiert." : "No answer generated."),
+      language,
+    ),
     citations: parsed.citations.length > 0 ? parsed.citations : fallbackCitations,
     confidence,
   };

@@ -13,6 +13,8 @@ const config = {
   pdfUrl:
     process.env.SGGS_PDF_URL ||
     "https://www.sikhnet.com/files/ereader/SGGS%20%5BGurmukhi%5D.pdf",
+  embeddingBatchSize: Number(process.env.INGEST_EMBEDDING_BATCH_SIZE || 50),
+  upsertBatchSize: Number(process.env.INGEST_UPSERT_BATCH_SIZE || 128),
 };
 
 const openai = new OpenAI({ apiKey: config.openAiApiKey });
@@ -96,6 +98,10 @@ const getPdfBuffer = async (pdfPath) => {
   const response = await fetch(config.pdfUrl);
   if (!response.ok) {
     throw new Error(`Failed to download PDF: ${response.status} ${response.statusText}`);
+  }
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("pdf")) {
+    throw new Error(`Downloaded file is not a PDF (content-type: ${contentType || "unknown"}).`);
   }
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
@@ -188,7 +194,10 @@ const main = async () => {
   }
 
   const embeddings = [];
-  const batchSize = 50;
+  const batchSize = Math.max(
+    1,
+    Number.isFinite(config.embeddingBatchSize) ? config.embeddingBatchSize : 50,
+  );
 
   for (let i = 0; i < allChunks.length; i += batchSize) {
     const slice = allChunks.slice(i, i + batchSize);
@@ -216,7 +225,10 @@ const main = async () => {
 
   await ensureCollection(embeddings[0].vector.length);
 
-  const upsertBatchSize = 128;
+  const upsertBatchSize = Math.max(
+    1,
+    Number.isFinite(config.upsertBatchSize) ? config.upsertBatchSize : 128,
+  );
   for (let i = 0; i < embeddings.length; i += upsertBatchSize) {
     const slice = embeddings.slice(i, i + upsertBatchSize);
     await upsertPoints(slice);

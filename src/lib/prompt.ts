@@ -5,14 +5,20 @@ const languageInstruction = (language: OutputLanguage): string =>
     ? "Antworte auf Deutsch."
     : "Respond in English.";
 
+const interpretationLabel = (language: OutputLanguage): string =>
+  language === "de"
+    ? "Erläuterung/Interpretation"
+    : "Explanation/Interpretation (Erläuterung/Interpretation)";
+
 export const buildSystemPrompt = (mode: ChatMode, language: OutputLanguage): string => {
+  const label = interpretationLabel(language);
   const modeInstruction =
     mode === "quick"
       ? `
 Mode QUICK:
 - Keep explanation concise (3-6 sentences).
 - Include exactly one primary SGGS citation.
-- Label your interpretation section as "Erläuterung/Interpretation".
+- Label your interpretation section as "${label}".
 `
       : `
 Mode DEEP:
@@ -22,7 +28,7 @@ Mode DEEP:
   3) Context of the whole Shabad/passage
   4) Practical application
 - Include multiple SGGS citations.
-- Label interpretation as "Erläuterung/Interpretation".
+- Label interpretation as "${label}".
 `;
 
   return `You are a Sikhi learning assistant.
