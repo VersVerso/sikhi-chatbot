@@ -21,5 +21,11 @@ export const appConfig = {
   appBaseUrl: process.env.NEXT_PUBLIC_APP_BASE_URL ?? "http://localhost:3000",
 } as const;
 
+export const getMissingRuntimeConfigKeys = (): string[] => {
+  const missing: string[] = [];
+  if (!appConfig.openAiApiKey) missing.push("OPENAI_API_KEY");
+  return missing;
+};
+
 export const hasRequiredRuntimeConfig = (): boolean =>
-  Boolean(appConfig.openAiApiKey && appConfig.qdrantUrl && appConfig.qdrantCollection);
+  getMissingRuntimeConfigKeys().length === 0;

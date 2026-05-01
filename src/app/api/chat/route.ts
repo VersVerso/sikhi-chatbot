@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { hasRequiredRuntimeConfig } from "@/lib/config";
+import { hasRequiredRuntimeConfig, getMissingRuntimeConfigKeys } from "@/lib/config";
 import { answerWithRag } from "@/lib/rag";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { ChatRequestBody } from "@/types/chat";
@@ -34,7 +34,10 @@ export async function POST(request: NextRequest) {
 
   if (!hasRequiredRuntimeConfig()) {
     return NextResponse.json(
-      { error: "Server is missing required runtime configuration." },
+      {
+        error: "Server is missing required runtime configuration.",
+        missing: getMissingRuntimeConfigKeys(),
+      },
       { status: 500 },
     );
   }
